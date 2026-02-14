@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios'; // Import Axios as per project pattern for API calls
 
 /**
  * UserManagement Component
@@ -9,56 +10,58 @@ const UserManagement = () => {
     { id: 1, name: 'Alice Smith', email: 'alice@example.com' },
     { id: 2, name: 'Bob Johnson', email: 'bob@example.com' }
   ]);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportError, setExportError] = useState(null);
 
   // FIXME: Clients requested a way to export this list to CSV for reporting.
   // The backend endpoint exists at /api/users/export but the frontend logic is missing.
 
-  const handleExportCsv = async () => {
-    setIsExporting(true);
-    setExportError(null); // Clear any previous errors
-
+  /**
+   * Handles the export of user data to a Markdown file.
+   * Makes an API call to /api/users/export and triggers a file download.
+   */
+  const handleExport = async () => {
     try {
-      const response = await fetch('/api/users/export');
+      // Make a GET request to the export endpoint.
+      // Set responseType to 'blob' to handle binary file responses correctly.
+      const response = await axios.get('/api/users/export', {
+        responseType: 'blob'
+      });
 
-      if (!response.ok) {
-        // Attempt to parse a more specific error message from the response body if available
-        let errorMessage = `HTTP error! Status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          if (errorData && errorData.message) {
-            errorMessage = errorData.message;
-          } else {
-            const errorText = await response.text();
-            if (errorText) errorMessage += `: ${errorText}`;
-          }
-        } catch (jsonError) {
-          const errorText = await response.text();
-          if (errorText) errorMessage += `: ${errorText}`;
-        }
-        throw new Error(errorMessage);
+      // Retrieve the Content-Type header from the response.
+      // Axios automatically lowercases headers.
+      const contentType = response.headers['content-type'];
+
+      // Check if the received content type indicates a Markdown file.
+      // The task specifically requests text/markdown.
+      if (contentType && contentType.includes('text/markdown')) {
+        // response.data is already a Blob object due to `responseType: 'blob'`.
+        const blob = response.data;
+
+        // Create a temporary URL for the Blob object.
+        const url = window.URL.createObjectURL(blob);
+
+        // Create a temporary anchor (<a>) element to trigger the download.
+        const link = document.createElement('a');
+        link.href = url;
+        // Set the 'download' attribute to specify the filename for the downloaded file.
+        link.setAttribute('download', 'user_list.md'); 
+
+        // Programmatically click the link to initiate the download.
+        // Appending to body ensures wider browser compatibility.
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link); // Clean up the temporary link element.
+
+        // Revoke the object URL to release browser memory once the download is triggered.
+        window.URL.revokeObjectURL(url);
+      } else {
+        // Handle cases where the server sends an unexpected content type.
+        console.error('Export failed: Unexpected content type received:', contentType);
+        alert('Failed to export users: Received an unexpected file type from the server.');
       }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-
-      // Create a temporary link element to trigger the download
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'users.csv'; // Desired filename for the downloaded file
-      document.body.appendChild(a); // Append the link to the document body
-      a.click(); // Programmatically click the link to start the download
-      a.remove(); // Remove the link from the document
-      
-      // Revoke the object URL to free up browser memory
-      URL.revokeObjectURL(url);
-
     } catch (error) {
-      console.error('Failed to export users to CSV:', error);
-      setExportError(error.message || 'An unexpected error occurred during export.');
-    } finally {
-      setIsExporting(false);
+      console.error('Error exporting users:', error);
+      // Provide basic user feedback for export failures.
+      alert('Failed to export users. Please check your network and try again.');
     }
   };
 
@@ -87,19 +90,14 @@ const UserManagement = () => {
           Add User
         </button>
         {/* TODO: Add Export Button Here */}
-        <button
-          onClick={handleExportCsv}
-          className={`px-4 py-2 rounded ${isExporting ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}
-          disabled={isExporting}
+        {/* New button to trigger the export functionality */}
+        <button 
+          onClick={handleExport}
+          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
         >
-          {isExporting ? 'Exporting...' : 'Export to CSV'}
+          Export to Markdown
         </button>
       </div>
-      {exportError && (
-        <div className="mt-4 p-3 bg-red-100 text-red-700 rounded border border-red-400">
-          Error: {exportError}
-        </div>
-      )}
     </div>
   );
 };
