@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios'; // Import axios for API calls
 
 /**
  * UserManagement Component
@@ -9,56 +10,77 @@ const UserManagement = () => {
     { id: 1, name: 'Alice Smith', email: 'alice@example.com' },
     { id: 2, name: 'Bob Johnson', email: 'bob@example.com' }
   ]);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportError, setExportError] = useState(null);
+
+  // State to manage loading indicator for the export button
+  const [isLoadingExport, setIsLoadingExport] = useState(false);
 
   // FIXME: Clients requested a way to export this list to CSV for reporting.
   // The backend endpoint exists at /api/users/export but the frontend logic is missing.
 
+  /**
+   * Handles the click event for the "Export to CSV" button.
+   * Fetches user data as a CSV blob from the API and triggers a file download.
+   */
   const handleExportCsv = async () => {
-    setIsExporting(true);
-    setExportError(null); // Clear any previous errors
+    setIsLoadingExport(true);
+    let objectUrl; // Declare here to ensure it's accessible in finally for revocation
 
     try {
-      const response = await fetch('/api/users/export');
+      // Make a GET request to the export endpoint using Axios.
+      // responseType: 'blob' tells Axios to expect a binary response (like a file).
+      const response = await axios.get('/api/users/export', {
+        responseType: 'blob',
+      });
 
-      if (!response.ok) {
-        // Attempt to parse a more specific error message from the response body if available
-        let errorMessage = `HTTP error! Status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          if (errorData && errorData.message) {
-            errorMessage = errorData.message;
-          } else {
-            const errorText = await response.text();
-            if (errorText) errorMessage += `: ${errorText}`;
-          }
-        } catch (jsonError) {
-          const errorText = await response.text();
-          if (errorText) errorMessage += `: ${errorText}`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-
-      // Create a temporary link element to trigger the download
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'users.csv'; // Desired filename for the downloaded file
-      document.body.appendChild(a); // Append the link to the document body
-      a.click(); // Programmatically click the link to start the download
-      a.remove(); // Remove the link from the document
+      // Axios, by default, throws an error for any status code outside the 2xx range.
+      // If we reach here, the response status was in the 2xx range (e.g., 200 OK).
       
-      // Revoke the object URL to free up browser memory
-      URL.revokeObjectURL(url);
+      const blob = response.data; // response.data is directly the Blob object
+      const filename = 'users.csv'; // Desired filename for the downloaded file
+
+      // Create a temporary URL for the Blob object
+      objectUrl = URL.createObjectURL(blob);
+
+      // Programmatically create an anchor element to trigger the download
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename; // Set the download attribute to specify the filename
+
+      // Append the link to the document body, simulate a click, and then remove it.
+      // This approach works across most browsers to initiate a file download.
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
 
     } catch (error) {
-      console.error('Failed to export users to CSV:', error);
-      setExportError(error.message || 'An unexpected error occurred during export.');
+      console.error('Error exporting users to CSV:', error);
+      let errorMessage = 'Failed to export users.';
+      
+      // Provide more specific error messages if it's an Axios error
+      if (axios.isAxiosError(error)) {
+        if (error.response) {
+          // The request was made and the server responded with a status code
+          // that falls out of the range of 2xx
+          errorMessage += ` Server responded with status ${error.response.status}.`;
+          // If the server sent a text/JSON error message, it would be in error.response.data (as ArrayBuffer/Blob)
+          // For simplicity, not attempting to parse it here, just using status.
+        } else if (error.request) {
+          // The request was made but no response was received
+          errorMessage += ' No response received from server. Please check your network connection.';
+        } else {
+          // Something happened in setting up the request that triggered an Error
+          errorMessage += ' An error occurred during request setup.';
+        }
+      } else {
+        errorMessage += ' An unexpected error occurred.';
+      }
+      alert(errorMessage); // Simple alert for error notification, following basic error handling pattern
     } finally {
-      setIsExporting(false);
+      setIsLoadingExport(false); // Always reset loading state
+      // Revoke the object URL to free up memory, regardless of success or failure
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
     }
   };
 
@@ -86,20 +108,19 @@ const UserManagement = () => {
         <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
           Add User
         </button>
-        {/* TODO: Add Export Button Here */}
+        {/* Export to CSV Button */}
         <button
           onClick={handleExportCsv}
-          className={`px-4 py-2 rounded ${isExporting ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}
-          disabled={isExporting}
+          disabled={isLoadingExport} // Disable button while export is in progress
+          className={`px-4 py-2 rounded ${
+            isLoadingExport
+              ? 'bg-gray-400 text-gray-700 cursor-not-allowed' // Styling for loading state
+              : 'bg-green-600 text-white hover:bg-green-700'  // Normal styling for export button
+          }`}
         >
-          {isExporting ? 'Exporting...' : 'Export to CSV'}
+          {isLoadingExport ? 'Exporting...' : 'Export to CSV'}
         </button>
       </div>
-      {exportError && (
-        <div className="mt-4 p-3 bg-red-100 text-red-700 rounded border border-red-400">
-          Error: {exportError}
-        </div>
-      )}
     </div>
   );
 };
